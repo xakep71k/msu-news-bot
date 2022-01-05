@@ -21,6 +21,7 @@ struct News {
     date: String,
     header: String,
     body: String,
+    url: String,
 }
 
 #[derive(Clone)]
@@ -61,7 +62,10 @@ impl NewsHandlerImpl {
 impl NewsHandler for NewsHandlerImpl {
     fn handle_news(&self, news: &News) {
         let news = delete_formatting(news);
-        let body = format!("{}\n\n{}\n\n{}", news.header, news.body, news.date);
+        let body = format!(
+            "{}\n\n{}\n{}\n\n{}",
+            news.header, news.body, news.date, news.url
+        );
         let urldata = urlencoding::encode(&body);
 
         let url = format!(
@@ -142,6 +146,10 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
                                 news.push(News {
                                     id: id.to_string(),
                                     date: submitted_date.clone(),
+                                    url: format!(
+                                        "http://master.cmc.msu.ru/?q=ru/{}",
+                                        id.replace("-", "/")
+                                    ),
                                     header,
                                     body,
                                 });
@@ -257,9 +265,8 @@ fn delete_formatting(news: &News) -> News {
         .replace("<br>", "\n");
 
     let re = regex::Regex::new(r"<[^>]*>").unwrap();
-    let body = re.replace_all(&body, "");
-
+    let body = re.replace_all(&body, "").to_string();
     let mut not_formatted_news = news.clone();
-    not_formatted_news.body = body.to_string();
+    not_formatted_news.body = body;
     not_formatted_news
 }
