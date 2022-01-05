@@ -41,9 +41,9 @@ struct NewsHandlerImpl {
 impl Opts {
     fn from_args() -> Opts {
         Opts {
-            bookmarkfile: std::env::args().nth(0).unwrap(),
-            token: std::env::args().nth(1).unwrap(),
-            chat_id: std::env::args().nth(2).unwrap(),
+            bookmarkfile: std::env::args().nth(1).unwrap(),
+            token: std::env::args().nth(2).unwrap(),
+            chat_id: std::env::args().nth(3).unwrap(),
         }
     }
 }
@@ -67,7 +67,32 @@ impl NewsHandler for NewsHandlerImpl {
             .replace("<br>", "\n");
 
         let body = re.replace_all(&body, " ");
-        println!("{}\n{}\n", body, news.date);
+        let body = format!("{}\n\n{}", body, news.date);
+        let urldata = urlencoding::encode(&body);
+
+        let url = format!(
+            "https://api.telegram.org/bot{}/sendMessage?chat_id={}&text={}",
+            self.token, self.char_id, urldata,
+        );
+        let resp = reqwest::blocking::get(url);
+
+        match resp {
+            Ok(resp) => {
+                let text = resp.text();
+                match text {
+                    Ok(text) => {
+                        println!("{}", text);
+                    }
+
+                    Err(err) => {
+                        eprintln!("{}", err);
+                    }
+                }
+            }
+            Err(err) => {
+                eprintln!("sending error {}", err);
+            }
+        }
     }
 }
 
