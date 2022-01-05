@@ -2,7 +2,18 @@ use scraper::{Html, Selector};
 use std::io::{BufRead, Write};
 
 static MSU_MASTER_URL: &str = "http://master.cmc.msu.ru/";
-type NewsHandler = fn(news: &News);
+
+fn main() {
+    if std::env::args().len() != 4 {
+        eprintln!("wrong number of arguments: please specify <bookmarkfile> <token> <chat_id>");
+        std::process::exit(1);
+    }
+
+    let opts = Opts::from_args();
+    let news_handler = NewsHandlerImpl::from_opts(opts.clone());
+
+    request_loop(&opts.bookmarkfile, 1000 * 60, news_handler);
+}
 
 #[derive(Debug)]
 struct News {
@@ -11,29 +22,56 @@ struct News {
     body: String,
 }
 
-fn main() {
-    if std::env::args().len() != 2 {
-        eprintln!("wrong number of arguments: please specify bookmarkfile");
-        std::process::exit(1);
+#[derive(Clone)]
+struct Opts {
+    bookmarkfile: String,
+    token: String,
+    chat_id: String,
+}
+
+trait NewsHandler {
+    fn handle_news(&self, news: &News);
+}
+
+struct NewsHandlerImpl {
+    char_id: String,
+    token: String,
+}
+
+impl Opts {
+    fn from_args() -> Opts {
+        Opts {
+            bookmarkfile: std::env::args().nth(0).unwrap(),
+            token: std::env::args().nth(1).unwrap(),
+            chat_id: std::env::args().nth(2).unwrap(),
+        }
     }
-
-    let bookmarkfile = std::env::args().last().unwrap();
-    request_loop(&bookmarkfile, 1000 * 60, handle_news);
 }
 
-fn handle_news(news: &News) {
-    let re = regex::Regex::new(r"\s+").unwrap();
-    let body = news
-        .body
-        .replace("<p>", "")
-        .replace("</p>", "\n")
-        .replace("<br>", "\n");
-
-    let body = re.replace_all(&body, " ");
-    println!("{}\n{}\n", body, news.date);
+impl NewsHandlerImpl {
+    fn from_opts(opts: Opts) -> NewsHandlerImpl {
+        NewsHandlerImpl {
+            char_id: opts.chat_id,
+            token: opts.token,
+        }
+    }
 }
 
-fn request_loop(bookmarkfile: &str, interval: u64, news_handler: NewsHandler) {
+impl NewsHandler for NewsHandlerImpl {
+    fn handle_news(&self, news: &News) {
+        let re = regex::Regex::new(r"\s+").unwrap();
+        let body = news
+            .body
+            .replace("<p>", "")
+            .replace("</p>", "\n")
+            .replace("<br>", "\n");
+
+        let body = re.replace_all(&body, " ");
+        println!("{}\n{}\n", body, news.date);
+    }
+}
+
+fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandler) {
     loop {
         let html = request_html();
         let mut bookmark = std::collections::HashMap::new();
@@ -94,7 +132,7 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: NewsHandler) {
             news.sort_by_key(|x| x.id.clone());
 
             for n in news {
-                news_handler(&n);
+                news_handler.handle_news(&n);
             }
         }
 
