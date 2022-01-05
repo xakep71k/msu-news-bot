@@ -61,7 +61,7 @@ impl NewsHandlerImpl {
 impl NewsHandler for NewsHandlerImpl {
     fn handle_news(&self, news: &News) {
         let news = delete_formatting(news);
-        let body = format!("{}\n{}\n\n{}", news.header, news.body, news.date);
+        let body = format!("{}\n\n{}\n\n{}", news.header, news.body, news.date);
         let urldata = urlencoding::encode(&body);
 
         let url = format!(
