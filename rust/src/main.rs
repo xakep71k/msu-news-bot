@@ -111,7 +111,7 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
                     if !id.is_empty() {
                         let selector_date = Selector::parse(r#"span[class='submitted']"#).unwrap();
                         let selector_body = Selector::parse(r#"div[class='content']"#).unwrap();
-                        let selector_header = Selector::parse(r#"h2"#).unwrap();
+                        let selector_header = Selector::parse(r#"h2>a"#).unwrap();
                         let inner_html = Html::parse_fragment(&div.html());
                         let submitted_date = match inner_html.select(&selector_date).next() {
                             Some(span) => span.inner_html(),
