@@ -260,7 +260,6 @@ fn delete_formatting(news: &News) -> News {
     let re_double_spaces = regex::Regex::new(r"\s+").unwrap();
     let body = re_double_spaces.replace_all(&news.body, " ");
     let body = body
-        .replace("<p>", "")
         .replace("</p>", "\n")
         .replace("<br>", "\n");
 
