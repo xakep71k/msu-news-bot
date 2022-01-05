@@ -249,14 +249,15 @@ where
 }
 
 fn delete_formatting(news: &News) -> News {
-    let re = regex::Regex::new(r"\s+").unwrap();
-    let body = news
-        .body
+    let re_double_spaces = regex::Regex::new(r"\s+").unwrap();
+    let body = re_double_spaces.replace_all(&news.body, " ");
+    let body = body
         .replace("<p>", "")
         .replace("</p>", "\n")
         .replace("<br>", "\n");
 
-    let body = re.replace_all(&body, " ");
+    let re = regex::Regex::new(r"<[^>]*>").unwrap();
+    let body = re.replace_all(&body, "");
 
     let mut not_formatted_news = news.clone();
     not_formatted_news.body = body.to_string();
