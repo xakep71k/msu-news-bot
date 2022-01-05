@@ -15,10 +15,11 @@ fn main() {
     request_loop(&opts.bookmarkfile, 1000 * 60, news_handler);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct News {
     id: String,
     date: String,
+    header: String,
     body: String,
 }
 
@@ -59,15 +60,8 @@ impl NewsHandlerImpl {
 
 impl NewsHandler for NewsHandlerImpl {
     fn handle_news(&self, news: &News) {
-        let re = regex::Regex::new(r"\s+").unwrap();
-        let body = news
-            .body
-            .replace("<p>", "")
-            .replace("</p>", "\n")
-            .replace("<br>", "\n");
-
-        let body = re.replace_all(&body, " ");
-        let body = format!("{}\n\n{}", body, news.date);
+        let news = delete_formatting(news);
+        let body = format!("{}\n{}\n\n{}", news.header, news.body, news.date);
         let urldata = urlencoding::encode(&body);
 
         let url = format!(
@@ -99,8 +93,9 @@ impl NewsHandler for NewsHandlerImpl {
 fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandler) {
     loop {
         let html = request_html();
-        let mut bookmark = std::collections::HashMap::new();
-        if let Err(err) = load_bookmark(bookmarkfile, &mut bookmark) {
+        let mut loaded_bookmark = std::collections::HashMap::new();
+        let mut saving_bookmark = std::collections::HashMap::new();
+        if let Err(err) = load_bookmark(bookmarkfile, &mut loaded_bookmark) {
             eprintln!("{}", err);
         }
 
@@ -116,6 +111,7 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
                     if !id.is_empty() {
                         let selector_date = Selector::parse(r#"span[class='submitted']"#).unwrap();
                         let selector_body = Selector::parse(r#"div[class='content']"#).unwrap();
+                        let selector_header = Selector::parse(r#"h2"#).unwrap();
                         let inner_html = Html::parse_fragment(&div.html());
                         let submitted_date = match inner_html.select(&selector_date).next() {
                             Some(span) => span.inner_html(),
@@ -123,6 +119,10 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
                         };
                         let body = match inner_html.select(&selector_body).next() {
                             Some(div) => div.inner_html(),
+                            _ => String::new(),
+                        };
+                        let header = match inner_html.select(&selector_header).next() {
+                            Some(h2) => h2.inner_html(),
                             _ => String::new(),
                         };
 
@@ -136,16 +136,17 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
 
                         if !submitted_date.is_empty() && !body.is_empty() {
                             let empty = String::new();
-                            let found_id = bookmark.get(&*id).unwrap_or(&empty);
+                            let found_id = loaded_bookmark.get(&*id).unwrap_or(&empty);
 
                             if found_id != &submitted_date {
                                 news.push(News {
                                     id: id.to_string(),
                                     date: submitted_date.clone(),
+                                    header,
                                     body,
                                 });
-                                bookmark.insert(id.to_string(), submitted_date);
                             }
+                            saving_bookmark.insert(id.to_string(), submitted_date);
                         }
                     }
                 })
@@ -161,7 +162,7 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
             }
         }
 
-        let res = save_bookmark(bookmarkfile, &bookmark);
+        let res = save_bookmark(bookmarkfile, &saving_bookmark);
         if let Err(err) = res {
             eprintln!("{}", err);
         }
@@ -245,4 +246,19 @@ where
 {
     let file = std::fs::File::open(filename)?;
     Ok(std::io::BufReader::new(file).lines())
+}
+
+fn delete_formatting(news: &News) -> News {
+    let re = regex::Regex::new(r"\s+").unwrap();
+    let body = news
+        .body
+        .replace("<p>", "")
+        .replace("</p>", "\n")
+        .replace("<br>", "\n");
+
+    let body = re.replace_all(&body, " ");
+
+    let mut not_formatted_news = news.clone();
+    not_formatted_news.body = body.to_string();
+    not_formatted_news
 }
