@@ -170,9 +170,11 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
             }
         }
 
-        let res = save_bookmark(bookmarkfile, &saving_bookmark);
-        if let Err(err) = res {
-            eprintln!("{}", err);
+        if !saving_bookmark.is_empty() {
+            let res = save_bookmark(bookmarkfile, &saving_bookmark);
+            if let Err(err) = res {
+                eprintln!("{}", err);
+            }
         }
 
         std::thread::sleep(std::time::Duration::from_millis(interval));
@@ -259,9 +261,7 @@ where
 fn delete_formatting(news: &News) -> News {
     let re_double_spaces = regex::Regex::new(r"\s+").unwrap();
     let body = re_double_spaces.replace_all(&news.body, " ");
-    let body = body
-        .replace("</p>", "\n")
-        .replace("<br>", "\n");
+    let body = body.replace("</p>", "\n").replace("<br>", "\n");
 
     let re = regex::Regex::new(r"<[^>]*>").unwrap();
     let body = re.replace_all(&body, "").to_string();
