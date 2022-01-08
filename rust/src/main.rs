@@ -32,7 +32,7 @@ struct Opts {
 }
 
 trait NewsHandler {
-    fn handle_news(&self, news: &News);
+    fn handle_news(&self, news: &News) -> bool;
 }
 
 struct NewsHandlerImpl {
@@ -60,7 +60,7 @@ impl NewsHandlerImpl {
 }
 
 impl NewsHandler for NewsHandlerImpl {
-    fn handle_news(&self, news: &News) {
+    fn handle_news(&self, news: &News) -> bool {
         let news = delete_formatting(news);
         let body = format!(
             "{}\n\n{}\n{}\n\n{}",
@@ -76,19 +76,23 @@ impl NewsHandler for NewsHandlerImpl {
 
         match resp {
             Ok(resp) => {
+                let status = resp.status().is_success();
                 let text = resp.text();
                 match text {
                     Ok(text) => {
-                        println!("{}", text);
+                        println!("{}, status is success: {}", text, status);
+                        status
                     }
 
                     Err(err) => {
                         eprintln!("{}", err);
+                        false
                     }
                 }
             }
             Err(err) => {
                 eprintln!("sending error {}", err);
+                false
             }
         }
     }
@@ -157,24 +161,24 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
                             saving_bookmark.insert(id.to_string(), submitted_date);
                         }
                     }
-                })
+                });
+
+                if !news.is_empty() {
+                    news.sort_by_key(|x| x.id.clone());
+
+                    for n in news {
+                        if !news_handler.handle_news(&n) {
+                            saving_bookmark.remove(&n.id);
+                        }
+                    }
+                }
+
+                let res = save_bookmark(bookmarkfile, &saving_bookmark);
+                if let Err(err) = res {
+                    eprintln!("{}", err);
+                }
             }
             Err(err) => eprintln!("{}", err),
-        }
-
-        if !news.is_empty() {
-            news.sort_by_key(|x| x.id.clone());
-
-            for n in news {
-                news_handler.handle_news(&n);
-            }
-        }
-
-        if !saving_bookmark.is_empty() {
-            let res = save_bookmark(bookmarkfile, &saving_bookmark);
-            if let Err(err) = res {
-                eprintln!("{}", err);
-            }
         }
 
         std::thread::sleep(std::time::Duration::from_millis(interval));
