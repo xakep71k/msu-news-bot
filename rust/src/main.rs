@@ -1,4 +1,6 @@
 use scraper::{Html, Selector};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::io::{BufRead, Write};
 
 static MSU_MASTER_URL: &str = "http://master.cmc.msu.ru/";
@@ -59,66 +61,75 @@ impl NewsHandlerImpl {
     }
 }
 
+fn hash(obj: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    obj.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn filter(news: &News) -> bool {
+    let mut split_date = news.date.split(' ');
+    match split_date.nth(1) {
+        Some(date) => match split_date.nth(1) {
+            Some(time) => {
+                let date_time_str = format!("{} {}", date, time);
+                match chrono::NaiveDateTime::parse_from_str(&date_time_str, "%m/%d/%Y %H:%M") {
+                    Ok(date_time) => {
+                        let not_older = chrono::Utc::now().timestamp_millis() - 1000 * 60 * 60 * 24;
+                        return date_time.timestamp_millis() < not_older;
+                    }
+                    Err(err) => {
+                        eprintln!("datetime not parsed {} {}", date_time_str, err);
+                    }
+                }
+            }
+            None => {
+                eprintln!("time not parsed {}", news.date);
+            }
+        },
+        None => {
+            eprintln!("date not parsed {}", news.date);
+        }
+    }
+    true
+}
+
 impl NewsHandler for NewsHandlerImpl {
     fn handle_news(&self, news: &News) -> bool {
-        let news = delete_formatting(news);
-        let body = format!(
-            "{}\n\n{}\n{}\n\n{}",
-            news.header, news.body, news.date, news.url
-        );
+        if !filter(news) {
+            let body = format!(
+                "{}\n\n{}\n{}\n\n{}",
+                news.header, news.body, news.date, news.url
+            );
 
-        let mut split_date = news.date.split(' ');
-        match split_date.nth(1) {
-            Some(date) => match split_date.nth(1) {
-                Some(time) => {
-                    let date_time_str = format!("{} {}", date, time);
-                    match chrono::NaiveDateTime::parse_from_str(&date_time_str, "%m/%d/%Y %H:%M") {
-                        Ok(date_time) => {
-                            let not_older =
-                                chrono::Utc::now().timestamp_millis() - 1000 * 60 * 60 * 24;
-                            if date_time.timestamp_millis() >= not_older {
-                                let urldata = urlencoding::encode(&body);
+            let urldata = urlencoding::encode(&body);
 
-                                let url = format!(
-                                    "https://api.telegram.org/bot{}/sendMessage?chat_id={}&text={}",
-                                    self.token, self.char_id, urldata,
-                                );
-                                let resp = reqwest::blocking::get(url);
+            let url = format!(
+                "https://api.telegram.org/bot{}/sendMessage?chat_id={}&text={}",
+                self.token, self.char_id, urldata,
+            );
+            let resp = reqwest::blocking::get(url);
 
-                                match resp {
-                                    Ok(resp) => {
-                                        let status = resp.status().is_success();
-                                        let text = resp.text();
-                                        match text {
-                                            Ok(text) => {
-                                                println!("{}, status is success: {}", text, status);
-                                                return status;
-                                            }
-
-                                            Err(err) => {
-                                                eprintln!("{}", err);
-                                                return false;
-                                            }
-                                        }
-                                    }
-                                    Err(err) => {
-                                        eprintln!("sending error {}", err);
-                                        return false;
-                                    }
-                                }
-                            }
+            match resp {
+                Ok(resp) => {
+                    let status = resp.status().is_success();
+                    let text = resp.text();
+                    match text {
+                        Ok(text) => {
+                            println!("{}, status is success: {}", text, status);
+                            return status;
                         }
+
                         Err(err) => {
-                            eprintln!("datetime not parsed {} {}", date_time_str, err);
+                            eprintln!("{}", err);
+                            return false;
                         }
                     }
                 }
-                None => {
-                    eprintln!("time not parsed {}", news.date);
+                Err(err) => {
+                    eprintln!("sending error {}", err);
+                    return false;
                 }
-            },
-            None => {
-                eprintln!("date not parsed {}", news.date);
             }
         }
         true
@@ -156,6 +167,7 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
                             Some(div) => div.inner_html(),
                             _ => String::new(),
                         };
+
                         let header = match inner_html.select(&selector_header).next() {
                             Some(h2) => h2.inner_html(),
                             _ => String::new(),
@@ -167,16 +179,16 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
 
                         if body.is_empty() {
                             eprintln!("body is empty!");
-                        }
-
-                        if !submitted_date.is_empty() && !body.is_empty() {
+                        } else if !submitted_date.is_empty() {
+                            let body = delete_formatting(body);
                             let empty = String::new();
                             let found_id = loaded_bookmark.get(&*id).unwrap_or(&empty);
+                            let hash_and_date = format!("{} {}", submitted_date, hash(&body));
 
-                            if found_id != &submitted_date {
+                            if *found_id != hash_and_date {
                                 news.push(News {
                                     id: id.to_string(),
-                                    date: submitted_date.clone(),
+                                    date: submitted_date,
                                     url: format!(
                                         "http://master.cmc.msu.ru/?q=ru/{}",
                                         id.replace("-", "/")
@@ -185,7 +197,7 @@ fn request_loop(bookmarkfile: &str, interval: u64, news_handler: impl NewsHandle
                                     body,
                                 });
                             }
-                            saving_bookmark.insert(id.to_string(), submitted_date);
+                            saving_bookmark.insert(id.to_string(), hash_and_date);
                         }
                     }
                 });
@@ -289,14 +301,12 @@ where
     Ok(std::io::BufReader::new(file).lines())
 }
 
-fn delete_formatting(news: &News) -> News {
+fn delete_formatting(body: String) -> String {
     let re_double_spaces = regex::Regex::new(r"\s+").unwrap();
-    let body = re_double_spaces.replace_all(&news.body, " ");
+    let body = re_double_spaces.replace_all(&body, " ");
     let body = body.replace("</p>", "\n").replace("<br>", "\n");
 
     let re = regex::Regex::new(r"<style>.*</style>|<[^>]*>").unwrap();
     let body = re.replace_all(&body, "").to_string();
-    let mut not_formatted_news = news.clone();
-    not_formatted_news.body = body;
-    not_formatted_news
+    body
 }
