@@ -75,7 +75,7 @@ impl NewsHandler for NewsHandlerImpl {
                     match chrono::NaiveDateTime::parse_from_str(&date_time_str, "%m/%d/%Y %H:%M") {
                         Ok(date_time) => {
                             let not_older =
-                                chrono::Utc::now().timestamp_millis() - 1000 * 60 * 60 * 24 * 2;
+                                chrono::Utc::now().timestamp_millis() - 1000 * 60 * 60 * 24;
                             if date_time.timestamp_millis() >= not_older {
                                 let urldata = urlencoding::encode(&body);
 
