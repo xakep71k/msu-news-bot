@@ -66,35 +66,62 @@ impl NewsHandler for NewsHandlerImpl {
             "{}\n\n{}\n{}\n\n{}",
             news.header, news.body, news.date, news.url
         );
-        let urldata = urlencoding::encode(&body);
 
-        let url = format!(
-            "https://api.telegram.org/bot{}/sendMessage?chat_id={}&text={}",
-            self.token, self.char_id, urldata,
-        );
-        let resp = reqwest::blocking::get(url);
+        let mut split_date = news.date.split(' ');
+        match split_date.nth(1) {
+            Some(date) => match split_date.nth(1) {
+                Some(time) => {
+                    let date_time_str = format!("{} {}", date, time);
+                    match chrono::NaiveDateTime::parse_from_str(&date_time_str, "%m/%d/%Y %H:%M") {
+                        Ok(date_time) => {
+                            let not_older =
+                                chrono::Utc::now().timestamp_millis() - 1000 * 60 * 60 * 24 * 2;
+                            if date_time.timestamp_millis() >= not_older {
+                                let urldata = urlencoding::encode(&body);
 
-        match resp {
-            Ok(resp) => {
-                let status = resp.status().is_success();
-                let text = resp.text();
-                match text {
-                    Ok(text) => {
-                        println!("{}, status is success: {}", text, status);
-                        status
-                    }
+                                let url = format!(
+                                    "https://api.telegram.org/bot{}/sendMessage?chat_id={}&text={}",
+                                    self.token, self.char_id, urldata,
+                                );
+                                let resp = reqwest::blocking::get(url);
 
-                    Err(err) => {
-                        eprintln!("{}", err);
-                        false
+                                match resp {
+                                    Ok(resp) => {
+                                        let status = resp.status().is_success();
+                                        let text = resp.text();
+                                        match text {
+                                            Ok(text) => {
+                                                println!("{}, status is success: {}", text, status);
+                                                return status;
+                                            }
+
+                                            Err(err) => {
+                                                eprintln!("{}", err);
+                                                return false;
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        eprintln!("sending error {}", err);
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            eprintln!("datetime not parsed {} {}", date_time_str, err);
+                        }
                     }
                 }
-            }
-            Err(err) => {
-                eprintln!("sending error {}", err);
-                false
+                None => {
+                    eprintln!("time not parsed {}", news.date);
+                }
+            },
+            None => {
+                eprintln!("date not parsed {}", news.date);
             }
         }
+        true
     }
 }
 
@@ -267,7 +294,7 @@ fn delete_formatting(news: &News) -> News {
     let body = re_double_spaces.replace_all(&news.body, " ");
     let body = body.replace("</p>", "\n").replace("<br>", "\n");
 
-    let re = regex::Regex::new(r"<[^>]*>").unwrap();
+    let re = regex::Regex::new(r"<style>.*</style>|<[^>]*>").unwrap();
     let body = re.replace_all(&body, "").to_string();
     let mut not_formatted_news = news.clone();
     not_formatted_news.body = body;
