@@ -76,7 +76,7 @@ fn filter(news: &News) -> bool {
                 match chrono::NaiveDateTime::parse_from_str(&date_time_str, "%m/%d/%Y %H:%M") {
                     Ok(date_time) => {
                         let not_older =
-                            chrono::Utc::now().timestamp_millis() - 1000 * 60 * 60 * 24 * 7;
+                            chrono::Utc::now().timestamp_millis() - 1000 * 60 * 60 * 24 * 14;
                         return date_time.timestamp_millis() < not_older;
                     }
                     Err(err) => {
